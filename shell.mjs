@@ -191,7 +191,12 @@ function startPlayback(playNext) {
   }
 
   playingIndex = bitstreamList.selectedIndex;
-  document.getElementById("videoTitle").innerText = bitstreamList[playingIndex].text;
+  const videoTitleElement = document.getElementById("videoTitle");
+  if (videoTitleElement) {
+    videoTitleElement.innerText = bitstreamList[playingIndex].text;
+  } else {
+    console.warn("Elemento videoTitle não encontrado");
+  }
 
   const repeat = loopPlayback ? 0 : document.getElementById("repeat").value;  // don't repeat individual sequences, when looping
   player.play(bitstreamList.value, repeat);

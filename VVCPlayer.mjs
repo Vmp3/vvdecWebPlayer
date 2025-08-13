@@ -19,6 +19,11 @@ export default class VVCPlayer {
   downloadedDuration = undefined;
   #renditionIdx = null;
   renditions = undefined;
+  mpdUrl = null;
+  mpdUpdateInterval = null;
+  lastMpdUpdate = 0;
+  minimumUpdatePeriod = 0;
+  isDynamicMpd = false;
 
   DEFAULT_FPS = DEFAULT_FPS;
 
@@ -133,9 +138,17 @@ export default class VVCPlayer {
     this.decoderWorker.postMessage({ cmd: 'stop' });
     this.renderer?.clear();
     this.FrameQueue.clear();
+    
+    if (this.mpdUpdateInterval) {
+      clearInterval(this.mpdUpdateInterval);
+      this.mpdUpdateInterval = null;
+    }
   }
 
   async #playMPD(mpdUrl) {
+    this.mpdUrl = mpdUrl;
+    this.lastMpdUpdate = Date.now();
+    
     const result = await fetch(mpdUrl);
     if (!result.ok) {
       this.onErrorMsg(`Downloading ${result.url} failed: (${result.status}) ${result.statusText}`);
@@ -143,7 +156,36 @@ export default class VVCPlayer {
       return;
     }
     const manifest = await result.text();
+    
+    const isDynamicFromXml = manifest.includes('type="dynamic"');
+    const hasMinUpdatePeriod = manifest.includes('minimumUpdatePeriod=');
+    
     const parsedManifest = mpdParser.parse(manifest, { url: mpdUrl });
+
+    this.isDynamicMpd = isDynamicFromXml || parsedManifest.type === 'dynamic';
+    
+    if (this.isDynamicMpd) {
+      let updatePeriod = null;
+      
+      if (hasMinUpdatePeriod) {
+        const match = manifest.match(/minimumUpdatePeriod="PT([0-9.]+)S"/);
+        if (match) {
+          updatePeriod = parseFloat(match[1]);
+        }
+      }
+      
+      if (!updatePeriod && parsedManifest.minimumUpdatePeriod) {
+        updatePeriod = parsedManifest.minimumUpdatePeriod;
+      }
+      
+      if (updatePeriod) {
+        this.minimumUpdatePeriod = updatePeriod * 1000;
+        this.onPrintMsg(`Stream live detectado. Atualização do MPD a cada ${updatePeriod}s`);
+      } else {
+        this.minimumUpdatePeriod = 2000;
+        this.onPrintMsg(`Stream live detectado, usando período padrão de 2s`);
+      }
+    }
 
     const vvcPlaylists = parsedManifest.playlists.filter(pl => pl.attributes.CODECS.match(/vv./));
     console.assert(vvcPlaylists.length > 0, "no VVC codec rendition");
@@ -190,6 +232,76 @@ export default class VVCPlayer {
       mpdDuration: parsedManifest.duration,
       numDecThreads: this.numDecoderThreads,
     });
+
+    if (this.isDynamicMpd && this.minimumUpdatePeriod > 0) {
+      this.#setupMpdUpdate();
+    }
+  }
+
+  #setupMpdUpdate() {
+    if (this.mpdUpdateInterval) {
+      clearInterval(this.mpdUpdateInterval);
+    }
+    
+    this.mpdUpdateInterval = setInterval(() => {
+      this.#updateMpd();
+    }, this.minimumUpdatePeriod);
+  }
+
+  async #updateMpd() {
+    if (this.playingStatus === "stop" || !this.isDynamicMpd || !this.mpdUrl) {
+      return;
+    }
+
+    try {
+      const now = Date.now();
+      if (now - this.lastMpdUpdate < this.minimumUpdatePeriod * 0.8) {
+        return;
+      }
+
+      this.lastMpdUpdate = now;
+
+      const result = await fetch(this.mpdUrl);
+      if (!result.ok) {
+        this.onErrorMsg(`Erro ao atualizar MPD: (${result.status}) ${result.statusText}`);
+        return;
+      }
+
+      const manifest = await result.text();
+      const parsedManifest = mpdParser.parse(manifest, { url: this.mpdUrl });
+      
+      if (!parsedManifest.playlists) {
+        this.onErrorMsg("MPD atualizado não contém playlists válidas");
+        return;
+      }
+
+      const vvcPlaylists = parsedManifest.playlists.filter(pl => pl.attributes.CODECS.match(/vv./));
+      if (vvcPlaylists.length === 0) {
+        this.onErrorMsg("MPD atualizado não contém codecs VVC");
+        return;
+      }
+
+      const fixUrl = (url, mpdUrl) => {
+        mpdUrl = new URL(mpdUrl, document.location);
+        url = new URL(url, mpdUrl);
+        return url.toString();
+      };
+
+      for (let pl of vvcPlaylists) {
+        for (let seg of pl.segments) {
+          seg.resolvedUri = fixUrl(seg.uri, this.mpdUrl);
+          seg.map.resolvedUri = fixUrl(seg.map.uri, this.mpdUrl);
+        }
+      }
+
+      this.decoderWorker.postMessage({
+        cmd: 'updatePlaylists',
+        playlists: vvcPlaylists,
+      });
+
+    } catch (error) {
+      this.onErrorMsg(`Erro durante atualização do MPD: ${error.message}`);
+    }
   }
 
 
@@ -249,6 +361,12 @@ export default class VVCPlayer {
 
       case "downloadProgress":
         this.onDownloadProgress(100 * e.data.loaded / e.data.total, !!this.dashDuration);
+        break;
+        
+      case "updatePlaylistsResult":
+        if (!e.data.success) {
+          this.onErrorMsg(`Erro ao atualizar playlists: ${e.data.error}`);
+        }
         break;
     }
   };

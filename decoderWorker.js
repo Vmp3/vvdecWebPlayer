@@ -268,9 +268,42 @@ class PlaybackQueue {
     const currIdx = this.nextSegIdx;
     const seg = this.playlists[this.rendition].segments[currIdx];
     const initSeg = this.playlists[this.rendition].segments[currIdx]?.map;
+    
+    if (!initSeg && currIdx >= this.playlists[this.rendition].segments.length) {
+      printOut(`Aguardando novos segmentos... (posição: ${currIdx}/${this.playlists[this.rendition].segments.length})`);
+      
+      for (let attempts = 0; attempts < 50; attempts++) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        if (this.playlists[this.rendition].segments[currIdx]) {
+          printOut("Novos segmentos detectados, continuando reprodução...");
+          break;
+        }
+        
+        if (exitDecoder) {
+          return null;
+        }
+      }
+      
+      const newInitSeg = this.playlists[this.rendition].segments[currIdx]?.map;
+      if (!newInitSeg) {
+        printOut("Timeout aguardando novos segmentos");
+        return null;
+      }
+      
+      return this.#processInitSegment(currIdx);
+    }
+    
     if (!initSeg) {
       return null;
     }
+
+    return this.#processInitSegment(currIdx);
+  }
+
+  #processInitSegment(currIdx) {
+    const seg = this.playlists[this.rendition].segments[currIdx];
+    const initSeg = this.playlists[this.rendition].segments[currIdx]?.map;
 
     // this segment doesn't contain any data, besides the 'init' segment, so it is a complete file.
     if (!seg.resolvedUri) {
@@ -284,7 +317,10 @@ class PlaybackQueue {
         printOut("Init segment fetch not yet started. This is weird.");
         this.fetchSegment(currIdx);
       }
-      initSeg.file = await initSeg.filePromise;
+      return initSeg.filePromise.then(file => {
+        initSeg.file = file;
+        return file;
+      });
     }
     return initSeg.file;
   }
@@ -324,6 +360,59 @@ class PlaybackQueue {
         return pl.segments[this.nextSegIdx];
       }
     }
+  }
+
+  updatePlaylists(newPlaylists) {
+    let newSegmentsCount = 0;
+    
+    if (!this.playlists || this.playlists.length === 0) {
+      this.playlists = newPlaylists;
+      this.nextSegIdx = 0;
+      this.fetchSegment(this.nextSegIdx);
+      return newPlaylists[this.rendition].segments.length;
+    }
+
+    for (let i = 0; i < newPlaylists.length && i < this.playlists.length; i++) {
+      const newPlaylist = newPlaylists[i];
+      const oldPlaylist = this.playlists[i];
+      
+      if (!newPlaylist.segments || newPlaylist.segments.length === 0) {
+        continue;
+      }
+
+      let insertIndex = oldPlaylist.segments.length;
+      
+      const lastOldSegment = oldPlaylist.segments[oldPlaylist.segments.length - 1];
+      if (lastOldSegment && lastOldSegment.resolvedUri) {
+        const foundIndex = newPlaylist.segments.findIndex(seg => 
+          seg.resolvedUri === lastOldSegment.resolvedUri || 
+          seg.uri === lastOldSegment.uri
+        );
+        
+        if (foundIndex >= 0) {
+          const newSegments = newPlaylist.segments.slice(foundIndex + 1);
+          if (newSegments.length > 0) {
+            oldPlaylist.segments.push(...newSegments);
+            newSegmentsCount += newSegments.length;
+            printOut(`Adicionados ${newSegments.length} novos segmentos à playlist ${i}`);
+          }
+        } else {
+          printOut(`Substituindo playlist ${i} completamente (janela deslizante)`);
+          oldPlaylist.segments = newPlaylist.segments;
+          newSegmentsCount += newPlaylist.segments.length;
+        }
+      } else {
+        oldPlaylist.segments = newPlaylist.segments;
+        newSegmentsCount += newPlaylist.segments.length;
+      }
+    }
+
+    if (this.nextSegIdx >= this.playlists[this.rendition].segments.length) {
+      this.nextSegIdx = Math.max(0, this.playlists[this.rendition].segments.length - 1);
+    }
+    
+    this.fetchSegment(this.nextSegIdx);
+    return newSegmentsCount;
   }
 }
 
@@ -873,6 +962,25 @@ onmessage = async function (e) {
     case 'releaseFrame':
       if (decInstance && !exitDecoder) {
         planeAllocations.push(data.planes);
+      }
+      break;
+
+    case 'updatePlaylists':
+      if (playbackQueue && data.playlists) {
+        try {
+          const newSegmentsCount = playbackQueue.updatePlaylists(data.playlists);
+          postMessage({ 
+            cmd: "updatePlaylistsResult", 
+            success: true, 
+            newSegmentsCount: newSegmentsCount 
+          });
+        } catch (error) {
+          postMessage({ 
+            cmd: "updatePlaylistsResult", 
+            success: false, 
+            error: error.message 
+          });
+        }
       }
       break;
 
