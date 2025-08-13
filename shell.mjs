@@ -85,7 +85,13 @@ window.onload = async function () {
   };
   player.onDrawFrame = handleDrawFrame;
   player.onPrintMsg = print;
-  player.onErrorMsg = showToast;
+  player.onErrorMsg = (message, noNewLine, timeout) => {
+    if (typeof message === 'string' && message.startsWith('Unknown prefix SEI message')) {
+      print(message, noNewLine);
+      return;
+    }
+    showToast(message, noNewLine, timeout);
+  };
   player.defaultRenditionIdx = () => (player.renditions ?? [0]).length - 1;
 };
 

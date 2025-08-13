@@ -111,11 +111,6 @@
   <main>
     <!-- ------------ the player ------------ -->
     <div class="container-fluid d-flex flex-column bg-secondary pt-2">
-
-      <div class="m-1" style="position: absolute;">
-        <h1 id="videoTitle" class="d-inline-box text-light">&nbsp;</h1>
-      </div>
-
       <figure class="mx-auto bg-black rounded p-3" style="margin-top: 5rem; margin-bottom: 5rem;">
         <div id="videoWrapper">
           <canvas id="canvas" class="img-fluid bg-dark d-block" style="width: 800px;"></canvas>
@@ -227,24 +222,6 @@
 
       <textarea id="output" class="form-control mt-4" rows="24" spellcheck="false" readonly="true" disabled></textarea>
     </div>
-
-    <!-- ------------ link badges ------------ -->
-    <div class="container-fluid d-flex flex-wrap gap-5 p-5">
-      <a href="https://github.com/fraunhoferhhi/vvdec" target="_blank"
-        class="mw-100 link-secondary text-decoration-none">
-        <div class="logoBadge img-thumbnail border shadow">
-          <div class="d-flex overflow-hidden justify-content-center align-items-center h-100">
-            <div class="bi bi-github me-2"></div>VVdeC @ github
-          </div>
-        </div>
-      </a>
-      <a href="https://www.hhi.fraunhofer.de/en/departments/vca/technologies-and-solutions/h266-vvc.html"
-        target="_blank" class="mw-100">
-        <img src="img/Logo_Fraunhofer_HHI.svg" class="logoBadge img-thumbnail border shadow"></a>
-      <a href="https://www.mc-if.org/versatile-video-coding/" target="_blank" class="mw-100">
-        <img src="img/VVC_horizontal.svg" class="logoBadge img-thumbnail border shadow"></a>
-    </div>
-  </main>
 
   <!-- ------------ error/warning popups ------------ -->
   <div id="toastContainer" class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 11">

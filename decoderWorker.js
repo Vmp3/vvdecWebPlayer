@@ -21,6 +21,9 @@ function printOut(text, noNewLine) {
   postMessage({ "cmd": "out", "text": text, "noNewLine": noNewLine });
 }
 function printErr(text, noNewLine) {
+  if (typeof text === 'string' && text.startsWith('Unknown prefix SEI message')) {
+    return;
+  }
   console.warn(text);
   postMessage({ "cmd": "err", "text": text, "noNewLine": noNewLine });
 }

@@ -148,6 +148,8 @@ export default class VVCPlayer {
     const vvcPlaylists = parsedManifest.playlists.filter(pl => pl.attributes.CODECS.match(/vv./));
     console.assert(vvcPlaylists.length > 0, "no VVC codec rendition");
 
+    this.FrameDisplayScheduler.start(vvcPlaylists[0].attributes.frameRate);
+
     // fix URIs set by mpdParser
     const fixUrl = (url, mpdUrl) => {
       mpdUrl = new URL(mpdUrl, document.location);
@@ -424,8 +426,8 @@ export default class VVCPlayer {
 
   FrameQueue = {
     queue: [],                          // decoded frames to display
-    queueLengthTarget: 33,               // request this many new frames from the decoderWorker. grows when the queue underruns
-    queueLengthMax: 33,                 // never grow queueLengthTarget grows, beyond this limit
+    queueLengthTarget: 100,               // request this many new frames from the decoderWorker. grows when the queue underruns
+    queueLengthMax: 100,                 // never grow queueLengthTarget grows, beyond this limit
     frameRequestsOutstanding: 0,        // don't request new frames when this.queue.length + frameRequestsOutstanding > queueLengthTarget
     frameRequestsOutstandingMax: 10,    // limit outstanding frame requests, to ensure the decoder does not run OOM before we have processed them
     buffering: true,                    // fillig the queue, to display frames smoothly
@@ -550,30 +552,6 @@ export default class VVCPlayer {
     const displayH = useFixedSize ? this.vidTrackMaxH : yH;
 
     this.renderer.setSize(yW, yH, !useFixedSize);
-    if (useFixedSize) {
-      this.canvas.style.width = displayW + 'px';
-      this.canvas.style.height = displayH + 'px';
-    } else if (document.fullscreenElement) {
-      const canvasAspect = this.canvas.clientWidth / this.canvas.clientHeight;
-      const videoAspect = yW / yH;
-
-      if (videoAspect < canvasAspect) {
-        this.canvas.style.height = '100%';
-        this.canvas.style.width = canvas.clientHeight * videoAspect + 'px';
-      }
-      else {
-        this.canvas.style.width = '100%';
-        this.canvas.style.height = canvas.clientWidth / videoAspect + 'px';
-      }
-    }
-
-    const player = this;
-    window.onresize = function () {
-      // this is only needed to adapt the video size, when not playing. When playing it will be fixed on the next draw call
-      if (player.playingStatus !== "play" && player.canvas.clientWidth <= displayW) {
-        player.canvas.style.height = (player.canvas.clientWidth * yH / yW) + 'px';
-      }
-    };
 
     let pixFmt = THREE.UnsignedByteType;
     if (bitDepth > 8) {
@@ -646,19 +624,6 @@ export default class VVCPlayer {
       this.#setupScene(yW, yH, uvW, uvH, strideY, strideUV, bitDepth, bytesPerPixel);
     }
 
-    // update aspect ratio of renderer
-    const canvasAspect = this.canvas.clientWidth / this.canvas.clientHeight;
-    const videoAspect = yW / yH;
-    if (!document.fullscreenElement && Math.abs(canvasAspect - videoAspect) > 0.01) {
-      const useFixedSize = this.displaySizeFixed && !document.fullscreenElement && this.vidTrackMaxW && this.vidTrackMaxH;
-
-      this.renderer.setSize(yW, this.canvas.clientWidth / videoAspect, !useFixedSize);
-
-      if (useFixedSize) {
-        this.canvas.style.width = this.vidTrackMaxW + 'px';
-        this.canvas.style.height = this.canvas.clientWidth / videoAspect + 'px';
-      }
-    }
 
     const textureY = this.material.uniforms.textureY.value;
     const textureU = this.material.uniforms.textureU.value;
