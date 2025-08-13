@@ -121,7 +121,7 @@ async function decoderRun(urlOrPlaylists, args) {
   }
 
   let params = new VVdeC.Params();
-  params.threads = args.threads ?? 10;
+  params.threads = args.threads ?? 19;
   // params.removePadding = true;
   // params.logLevel = VVdeC.LogLevel.INFO;
 
